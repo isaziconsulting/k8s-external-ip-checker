@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ template "k8s-external-ip-checker.fullname" . }}
+  labels:
+    app: {{ template "k8s-external-ip-checker.name" . }}
+    chart: {{ template "k8s-external-ip-checker.chart" . }}
+    release: {{ .Release.Name }}
+    heritage: {{ .Release.Service }}
+spec:
+  selector:
+    matchLabels:
+      app: {{ template "k8s-external-ip-checker.name" . }}
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "k8s-external-ip-checker.name" . }}
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - |
+              set -eu;
+              trap 'echo Exiting... && exit 0' SIGTERM;
+              apk add --no-cache bind-tools;
+              while :;
+              do
+                set -e;
+                ip=$(dig +short myip.opendns.com @resolver1.opendns.com);
+                set +e;
+                echo $ALLOWED_IPS | grep "$ip" > /dev/null;
+                res=$?;
+                if [[ $res -eq 0 ]]
+                then
+                  echo "SUCCESS - $ip is allowed"
+                else
+                  echo "FAIL - $ip is not allowed"
+                fi
+                sleep {{ .Values.pollInterval }}
+              done
+          env:
+            - name: ALLOWED_IPS
+              value: {{ .Values.allowedIps }}
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+    {{- with .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.affinity }}
+      affinity:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+    {{- end }}
